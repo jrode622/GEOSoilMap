@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8' />
+    <title>Choropleth Map of Washington State Wildfires and Floods</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1' />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    
+    <style>
+        body {margin: 0; padding: 0;}
+        #map {position: absolute; top: 0; bottom: 0; width: 100%;}
+        #dropdowns {
+            margin-top: 20px;
+        }
+
+        .dropdown-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .dropdown {
+            display: block;
+            margin-bottom: 10px; /* Add spacing between dropdowns */
+            padding: 2px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        #info {
+            position: absolute;
+            top: 0;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            width: 350px;
+            bottom: 0;
+            right: 0;
+            background: #fffefed9;
+            margin-right: 20px;
+            font-family: "Times New Roman", Times, serif;
+            overflow: auto;
+            border-radius: 3px;
+        }
+
+        .legend {
+            background-color: #fffefed9;
+            border-radius: 3px;
+            bottom: 20px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font:
+                12px/20px 'Times New Roman', Times, serif;
+            padding: 10px;
+            position: absolute;
+            left: 10px;
+            z-index: 1;
+        }
+        .legend h4 {margin: 0 0 10px;}
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 10px;
+            margin-left: 5px;
+            width: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id='map'></div>
+    <div id="info">
+        <div id="static-info">
+            <p style="font-size: 20px;"><strong>Wildfires, Flooding, and Soil Composition in Washington State</strong></p>
+            <p style="font-size: 20px;"><strong>1996-2020</strong></p>
+            <p style="font-size: 18px;">Vivian Ouzounis & Jake Rode</p>
+            <p style="font-size: 12px;">This project explores the interplay between natural disasters, specifically wildfires and flooding, in Washington State. It examines how soil composition influences the connection between wildfire occurrence and flooding risk. According to the National Park Service (2023), wildfires in desert regions can damage soil by removing the sparse vegetation, which decreases the soil's ability to absorb water and heightens the potential for water flow to cause further damage. Building on this insight, we aim to investigate this phenomenon on a broader scale by analyzing wildfire and flooding data and trends across Washington State's diverse landscapes.</p>
+        </div>
+        <div id="dynamic-info">
+            <p>Hover over a county!</p>
+        </div>
+    
+        <div id="dropdowns">
+            <label for="map-toggle" class="dropdown-label">Select Map: </label>
+            <select id="map-toggle" class="dropdown">
+                <option value="fire">Wildfire</option>
+                <option value="flood">Flood</option>
+            </select>
+            <label for="time-toggle" class="dropdown-label">Select Time Period: </label>
+            <select id="time-toggle" class="dropdown">
+                <option value="total">Total</option>
+                <option value="1996-99">1996-99</option>
+                <option value="2000-04">2000-04</option>
+                <option value="2005-09">2005-09</option>
+                <option value="2010-14">2010-14</option>
+                <option value="2015-20">2015-20</option>
+            </select>
+        </div>
+    
+        <div id="water-toggle">
+            <button id="toggle-water-layer">Toggle Watercourse</button>
+        </div>
+    
+        <div id="line-chart-container">
+            <canvas id="line-chart"></canvas>
+        </div>
+    </div>
+    
+    
+    <div class="legend" id="dynamic-legend">
+    </div>
+
+
+
+    <script>
+        
+        mapboxgl.accessToken = 'pk.eyJ1IjoianIwZCIsImEiOiJjbTF1NjA4NTQwYW4zMmxvZ21tejhtcW1qIn0.GrYSugNI6XeNgYeXP3NXDQ';
+        const mymap = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v11',
+            projection: 'globe',
+            center: [-119, 47],
+            zoom: 6.2
+        });
+
+        let selectedCounty = null;
+        let currentLayer = 'fire'; // Start with fire layer
+        let fireTimeframe = "WAFireData_fire_total";
+        let floodTimeframe = "floods_total_floods_total";
+
+        // Function to create the new line chart with two lines
+        function createLineChart() {
+            const ctx = document.getElementById('line-chart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['1996-99', '2000-04', '2005-09', '2010-14', '2015-20'], // x-axis values (points)
+                    datasets: [
+                        {
+                            label: 'Wildfires',
+                            data: [13, 89, 154, 194, 339], // y-axis values for Line 1
+                            borderColor: '#bd0026',
+                            fill: false,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Floods',
+                            data: [36, 79, 155, 172, 323], // y-axis values for Line 2
+                            borderColor: '#08519c',
+                            fill: false,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time Period'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Incidents'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Create the line chart when the page loads
+        createLineChart();
+
+        // Function to load both fire and flood layers
+        function loadMapData(type) {
+
+            // Remove existing layers if needed
+            if (type === 'fire') {
+
+                if (mymap.getLayer('flood-layer')) {
+                    mymap.removeLayer('flood-layer');
+                    mymap.removeSource('WA_floods');
+                    mymap.removeLayer('soil-layer');
+                    mymap.removeLayer('water-layer');
+                }
+
+                if (!mymap.getLayer('fire-layer')) {
+
+                    mymap.addSource('WA_fires', {
+                        type: 'geojson',
+                        data: 'data/Data_simplified.geojson'
+                    });
+
+                    mymap.addLayer({
+                        id: 'fire-layer',
+                        type: 'fill',
+                        source: 'WA_fires',
+                        paint: {
+                            'fill-color': [
+                                'interpolate',
+                                ['linear'],
+                                ['get', fireTimeframe],
+                                30, '#ffffb2',
+                                60, '#fecc5c',
+                                102, '#fd8d3c',
+                                128, '#f03b20',
+                                179, '#bd0026'
+                            ],
+                            'fill-opacity': 0.75
+                        }
+                    });
+
+                    if (!mymap.getSource('soil-data')) {
+                        mymap.addSource('soil-data', {
+                            type: 'geojson',
+                            data: 'data/soil.geojson' // Ensure this path is correct
+                        });
+                    }
+
+                    if (!mymap.getLayer('soil-layer')) {
+                        mymap.addLayer({
+                            id: 'soil-layer',
+                            type: 'fill',
+                            source: 'soil-data',
+                            paint: {
+                                'fill-color': "green", // Adjust to match your design
+                            }
+                        });
+                        mymap.moveLayer('soil-layer');
+                    }
+                    
+                    // Add or update highlight source
+                    if (!mymap.getSource('highlight-source')) {
+                        mymap.addSource('highlight-source', {
+                            type: 'geojson',
+                            data: {
+                                type: 'FeatureCollection',
+                                features: []
+                            }
+                        });
+                    } else {
+                        mymap.getSource('highlight-source').setData({
+                            type: 'FeatureCollection',
+                            features: []
+                        });
+                    }
+
+                    if (!mymap.getLayer('highlight-layer')) {
+                        mymap.addLayer({
+                            id: 'highlight-layer',
+                            type: 'line',
+                            source: 'highlight-source',
+                            paint: {
+                                'line-color': '#FFFF00',
+                                'line-width': 3,
+                                'line-opacity': 1
+                            }
+                        });
+                        mymap.moveLayer('highlight-layer');
+                    }
+                }
+
+            } else if (type === 'flood') {
+                if (mymap.getLayer('fire-layer')) {
+                    mymap.removeLayer('fire-layer');
+                    mymap.removeSource('WA_fires');
+                    mymap.removeLayer('soil-layer');
+                    mymap.removeLayer('water-layer');
+                }
+
+                if (!mymap.getLayer('flood-layer')) {
+                    mymap.addSource('WA_floods', {
+                        type: 'geojson',
+                        data: 'data/Data_simplified.geojson'
+                    });
+
+                    mymap.addLayer({
+                        id: 'flood-layer',
+                        type: 'fill',
+                        source: 'WA_floods',
+                        paint: {
+                            'fill-color': [
+                                'interpolate',
+                                ['linear'],
+                                ['get', floodTimeframe],
+                                3.6, '#eff3ff',
+                                8, '#bdd7e7',
+                                12, '#6baed6',
+                                27.2, '#3182bd',
+                                210, '#08519c'
+                            ],
+                            'fill-opacity': 0.75
+                        }
+                    });
+
+                    if (!mymap.getSource('soil-data')) {
+                        mymap.addSource('soil-data', {
+                            type: 'geojson',
+                            data: 'data/soil.geojson' // Ensure this path is correct
+                        });
+                    }
+
+                    if (!mymap.getLayer('soil-layer')) {
+                        mymap.addLayer({
+                            id: 'soil-layer',
+                                type: 'fill',
+                                source: 'soil-data',
+                                paint: {
+                                    'fill-color': "green", // Adjust to match your design
+                                }
+                        });
+                        mymap.moveLayer('soil-layer');
+                    }
+
+                    // Add or update highlight source
+                    if (!mymap.getSource('highlight-source')) {
+                        mymap.addSource('highlight-source', {
+                            type: 'geojson',
+                            data: {
+                                type: 'FeatureCollection',
+                                features: []
+                            }
+                        });
+                    } else {
+                        mymap.getSource('highlight-source').setData({
+                            type: 'FeatureCollection',
+                            features: []
+                        });
+                    }
+
+                    if (!mymap.getLayer('highlight-layer')) {
+                        mymap.addLayer({
+                            id: 'highlight-layer',
+                            type: 'line',
+                            source: 'highlight-source',
+                            paint: {
+                                'line-color': '#FFFF00',
+                                'line-width': 3,
+                                'line-opacity': 1
+                            }
+                        });
+                        mymap.moveLayer('highlight-layer');
+                    }
+                }
+            }
+            currentLayer = type; // Update current layer
+        }
+
+        // Initialize layers
+        mymap.on('load', () => {
+            // Load initial map data (fire map)
+            loadMapData('fire'); // This ensures the map is loaded initially with the fire layer
+            updateLegend('fire', fireTimeframe);
+
+            // Add hover and click behavior for fire and flood layers independently
+            mymap.on('mousemove', 'fire-layer', handleMouseMove);
+            mymap.on('mousemove', 'flood-layer', handleMouseMove);
+            mymap.on('click', 'fire-layer', handleClick);
+            mymap.on('click', 'flood-layer', handleClick);
+        });
+
+        // Event listeners for dropdown change
+        document.getElementById('map-toggle').addEventListener('change', function (e) {
+            document.getElementById('time-toggle').value = "total";
+            loadMapData(e.target.value); // This ensures the selected map updates the layers
+            updateLegend(currentLayer, currentLayer === 'fire' ? "WAFireData_fire_total" : "floods_total_floods_total");
+            handleClick();
+        });
+
+        document.getElementById('time-toggle').addEventListener('change', function (e) {
+            const selectedTime = e.target.value; // Get the selected time period
+
+            if (currentLayer === 'fire') {
+                // Update fireTimeframe based on selected time
+                fireTimeframe = selectedTime === "1996-99" ? "WAFireData_fire_95" :
+                                selectedTime === "2000-04" ? "WAFireData_fire_00" :
+                                selectedTime === "2005-09" ? "WAFireData_fire_05" :
+                                selectedTime === "2010-14" ? "WAFireData_fire_10" :
+                                selectedTime === "2015-20" ? "WAFireData_fire_15" :
+                                "WAFireData_fire_total";
+
+                // Update the paint property for the fire layer
+                if (mymap.getLayer('fire-layer') && fireTimeframe == "WAFireData_fire_total") {
+                    mymap.setPaintProperty('fire-layer', 'fill-color', [
+                        'interpolate',
+                        ['linear'],
+                        ['get', fireTimeframe],
+                        30, '#ffffb2',
+                        60, '#fecc5c',
+                        102, '#fd8d3c',
+                        128, '#f03b20',
+                        179, '#bd0026'
+                    ]);
+                } else if (mymap.getLayer('fire-layer') && fireTimeframe != "WAFireData_fire_total"){
+                    mymap.setPaintProperty('fire-layer', 'fill-color', [
+                            'interpolate',
+                            ['linear'],
+                            ['get', fireTimeframe],
+                            5, '#ffffb2',
+                            10, '#fecc5c',
+                            20, '#fd8d3c',
+                            30, '#f03b20',
+                            40, '#bd0026'
+                        ]);
+                }
+
+            } else if (currentLayer === 'flood') {
+                    // Update floodTimeframe based on selected time
+                    floodTimeframe = selectedTime === "1996-99" ? "floods_96_floods_96" :
+                                    selectedTime === "2000-04" ? "floods_00_floods_00" :
+                                    selectedTime === "2005-09" ? "floods_05_floods_05" :
+                                    selectedTime === "2010-14" ? "floods_10_floods_10" :
+                                    selectedTime === "2015-20" ? "floods_15_floods_15" :
+                                    "floods_total_floods_total";
+
+                    // Update the paint property for the flood layer
+                    if (mymap.getLayer('flood-layer') && floodTimeframe == "floods_total_floods_total") {
+                        mymap.setPaintProperty('flood-layer', 'fill-color', [
+                            'interpolate',
+                            ['linear'],
+                            ['get', floodTimeframe],
+                            3.6, '#eff3ff',
+                            8, '#bdd7e7',
+                            12, '#6baed6',
+                            27.2, '#3182bd',
+                            210, '#08519c'
+                        ]);
+                    } else if (mymap.getLayer('flood-layer') && floodTimeframe != "floods_total_floods_total") {
+                        mymap.setPaintProperty('flood-layer', 'fill-color', [
+                            'interpolate',
+                            ['linear'],
+                            ['get', floodTimeframe],
+                            5, '#eff3ff',
+                            10, '#bdd7e7',
+                            25, '#6baed6',
+                            50, '#3182bd',
+                            100, '#08519c'
+                        ]);
+
+                }
+            }
+            // Reload the map data with the updated timeframe
+            updateLegend(currentLayer, currentLayer === 'fire' ? fireTimeframe : floodTimeframe);
+            loadMapData(currentLayer); // This reloads the correct data with the updated timeframe
+        });
+
+        // Event listener for toggling water layer
+        document.getElementById('toggle-water-layer').addEventListener('click', () => {
+            const waterLayerId = 'water-layer';
+
+            // Check if the layer exists
+            if (mymap.getLayer(waterLayerId)) {
+                const visibility = mymap.getLayoutProperty(waterLayerId, 'visibility');
+                // Toggle visibility of the water layer
+                if (visibility === 'visible') {
+                    mymap.setLayoutProperty(waterLayerId, 'visibility', 'none');
+                } else {
+                    mymap.setLayoutProperty(waterLayerId, 'visibility', 'visible');
+                }
+            } else {
+                console.error(`Layer with ID '${waterLayerId}' does not exist.`);
+            }
+
+            // Add source and layer if they do not exist
+            if (!mymap.getSource('water-data')) {
+                mymap.addSource('water-data', {
+                    type: 'geojson',
+                    data: 'data/watercourses.geojson'
+                });
+            }
+
+            if (!mymap.getLayer(waterLayerId)) {
+                mymap.addLayer({
+                    id: waterLayerId,
+                    type: 'line',
+                    source: 'water-data',
+                    paint: {
+                        'line-color': 'blue',
+                        'line-opacity': 0.5 
+                    }
+                });
+            }
+
+        });
+
+        function updateLegend(layer, timeframe) {
+            const legend = document.getElementById('dynamic-legend');
+            legend.innerHTML = '<h4>Legend</h4>'; // Reset legend content
+
+            if (layer === 'fire') {
+                legend.innerHTML += `
+                    <div><span style="background-color: #ffffb2"></span> ≤ ${timeframe === "WAFireData_fire_total" ? 30 : 5}</div>
+                    <div><span style="background-color: #fecc5c"></span> ≤ ${timeframe === "WAFireData_fire_total" ? 60 : 10}</div>
+                    <div><span style="background-color: #fd8d3c"></span> ≤ ${timeframe === "WAFireData_fire_total" ? 102 : 20}</div>
+                    <div><span style="background-color: #f03b20"></span> ≤ ${timeframe === "WAFireData_fire_total" ? 128 : 30}</div>
+                    <div><span style="background-color: #bd0026"></span> ≤ ${timeframe === "WAFireData_fire_total" ? 179 : 40}</div>
+                    <div><span style="background-color: #228b22"></span> = Poorly Drained Soil</div>
+                    <div style="display: flex; align-items: center;">
+                    <span style="background-color: #0000ff; width: 15px; height: 4px; display: inline-block; margin-left: 8px;"></span>
+                        = Watercourse </div>
+
+                `;
+            } else if (layer === 'flood') {
+                legend.innerHTML += `
+                    <div><span style="background-color: #eff3ff"></span> ≤ ${timeframe === "floods_total_floods_total" ? 3.6 : 5}</div>
+                    <div><span style="background-color: #bdd7e7"></span> ≤ ${timeframe === "floods_total_floods_total" ? 8 : 10}</div>
+                    <div><span style="background-color: #6baed6"></span> ≤ ${timeframe === "floods_total_floods_total" ? 12 : 25}</div>
+                    <div><span style="background-color: #3182bd"></span> ≤ ${timeframe === "floods_total_floods_total" ? 27.2 : 50}</div>
+                    <div><span style="background-color: #08519c"></span> ≤ ${timeframe === "floods_total_floods_total" ? 210 : 100}</div>
+                    <div><span style="background-color: #228b22"></span> = Poorly Drained Soil</div>
+                    <div style="display: flex; align-items: center;">
+                    <span style="background-color: #0000ff; width: 15px; height: 4px; display: inline-block; margin-left: 8px;"></span>
+                        = Watercourse </div>
+                `;
+            }
+        }
+
+        function handleMouseMove(event) {
+            // Ensure we are handling hover on the currently active layer
+            const layer = currentLayer === 'fire' ? 'fire-layer' : 'flood-layer';
+
+            // Only handle hover on the active layer when no county is selected
+            if (event.features && event.features.length > 0 && !selectedCounty) {
+                const data = mymap.queryRenderedFeatures(event.point, { layers: [layer] });
+
+                if (data.length) {
+                    const county = data[0];
+                    const occurrences = currentLayer === 'fire' 
+                        ? county.properties[fireTimeframe]
+                        : county.properties[floodTimeframe];
+                    document.getElementById('dynamic-info').innerHTML = `
+                        <p><strong>County Name:</strong> ${county.properties.NAMELSAD10}
+                        <br><strong>Number of Incidents:</strong> ${occurrences}</p>`;
+                }
+            }
+        }
+
+        function handleClick(event) {
+            const layer = currentLayer === 'fire' ? 'fire-layer' : 'flood-layer';
+            const county = event.features[0];
+            const countyId = county.properties.OBJECTID;
+
+            // Toggle selection if the clicked county is already selected
+            if (countyId === selectedCounty) {
+                selectedCounty = null;
+                mymap.getSource('highlight-source').setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+                document.getElementById('dynamic-info').innerHTML = `
+                    <p>Hover over a county!</p>`;
+            } else {
+
+                if (selectedCounty !== null) {
+                    mymap.getSource('highlight-source').setData({
+                        type: 'FeatureCollection',
+                        features: []
+                    });
+                }
+
+                selectedCounty = countyId;
+                mymap.getSource('highlight-source').setData({
+                    type: 'FeatureCollection',
+                    features: [county]
+                });
+
+                const occurrences = currentLayer === 'fire'
+                    ? county.properties[fireTimeframe]
+                    : county.properties[floodTimeframe];
+                document.getElementById('dynamic-info').innerHTML = `
+                    <p><strong>County Name:</strong> ${county.properties.NAMELSAD10}
+                    <br><strong>Number of Incidents:</strong> ${occurrences}</p>`;
+            }
+        }
+
+        mymap.addControl(new mapboxgl.FullscreenControl());
+        mymap.addControl(new mapboxgl.NavigationControl());
+
+    </script>
+</body>
+</html>
